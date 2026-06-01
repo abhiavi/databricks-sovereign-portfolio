@@ -53,11 +53,15 @@ def populate_mock_logs():
             )
         logger.info("Successfully inserted 5 mock logs (2 containing PII).")
         
+        # Close connection to release the lock!
+        conn.close()
+        
         # Wait 3 seconds for the daemon to run a cycle
         logger.info("Waiting 3 seconds for the PII worker daemon to scan and sanitize...")
         time.sleep(3)
         
-        # Query results
+        # Re-establish connection to query results
+        conn = duckdb.connect(DB_FILE)
         logger.info("Retrieving final sanitized rows from database...")
         rows = conn.execute("SELECT id, prompt, model_response, is_sanitized FROM inference_logs ORDER BY id").fetchall()
         

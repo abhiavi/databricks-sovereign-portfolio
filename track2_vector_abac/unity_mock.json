@@ -1,0 +1,5 @@
+{
+  "token-public": ["PUBLIC"],
+  "token-finance": ["PUBLIC", "FINANCE"],
+  "token-admin": ["PUBLIC", "FINANCE", "ADMIN"]
+}

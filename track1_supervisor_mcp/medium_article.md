@@ -29,20 +29,30 @@ Without an intermediate interceptor that validates the identity, authorization s
 To enforce strict zero-trust boundary isolation, we present the **Natoma Ingress Interdiction Proxy**. This proxy sits between the Databricks Supervisor Agent and the Databricks SQL Warehouse/Unity Catalog.
 
 ```
-[ Databricks Supervisor Agent ]
-             │
-             │ 1. API request (Bearer JWT token + JSON-RPC payload)
-             ▼
- [ Natoma Interdiction Proxy ] (Runs locally on Adraca Laptop)
-             │
-    ┌────────┴──────────────────────────┐
-    │ 2. Validated Payload              │ 3. Rejected Query
-    ▼                                   ▼
-[ Oracle Egress Gateway ]      [ 403 Access Denied ] (JSON-RPC Error)
-    │ (Nodes 1-4)
-    ▼
-[ Databricks Unity Catalog ]
+graph LR
+    subgraph Sovereign Edge [Adraca Sovereign Edge Laptop]
+        B[Natoma OBO Proxy<br>FastAPI Middleware]
+        C{Metadata Containment Map<br>JWT RS256 Verification}
+    end
+
+    A[Databricks Supervisor Agent<br>Untrusted Payload] -->|1. Bearer Token + JSON-RPC| B
+    B -->|2. Decode & Canonicalize| C
+    
+    C -->|3a. Catalog Validated| D[Oracle Egress Gateway<br>Nodes 1-4]
+    D -->|4. Authorized Query| E[(Databricks Unity Catalog)]
+    
+    C -.->|3b. Out of Scope / SQLi| F((403 Access Denied<br>JSON-RPC Sink))
+
+    classDef proxy fill:#0d1117,stroke:#00f2fe,stroke-width:2px,color:#fff;
+    classDef fail fill:#3b1114,stroke:#f85149,stroke-width:2px,color:#fff;
+    classDef success fill:#1a361f,stroke:#2ea043,stroke-width:2px,color:#fff;
+    classDef cloud fill:#0d1117,stroke:#f2cc60,stroke-width:2px,color:#fff;
+
+    class B,C proxy;
+    class D,E cloud;
+    class F fail;
 ```
+
 
 ### Key Security Primitives:
 1. **On-Behalf-Of (OBO) Asymmetric Authentication**: Every agent request must carry a cryptographically signed Bearer JWT token. The proxy validates the token signature using asymmetric RS256 cryptography against trusted public JSON Web Key Sets (JWKS).

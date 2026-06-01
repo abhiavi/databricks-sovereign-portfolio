@@ -20,7 +20,7 @@ def main():
         "splines": "ortho",
         "nodesep": "0.8",
         "ranksep": "1.0",
-        "bgcolor": "#0d1117",  # Modern dark background matching GitHub dark mode
+        "bgcolor": "white",  # Modern dark background matching GitHub dark mode
         "fontname": "Sans-Serif",
         "fontsize": "14",
         "fontcolor": "#ffffff"

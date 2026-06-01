@@ -16,10 +16,12 @@ app = FastAPI(title="Dynamic ABAC Vector Injection Proxy")
 # Path to mock Unity Catalog permissions
 UNITY_MOCK_PATH = "unity_mock.json"
 
+# Initialize Qdrant Client globally to prevent SQLite file locking issues
+qdrant_client_instance = QdrantClient(path="./qdrant_data")
+
 # Dependency to get Qdrant Client
 def get_qdrant_client() -> QdrantClient:
-    # Connects to the local persistent directory created by setup_qdrant.py
-    return QdrantClient(path="./qdrant_data")
+    return qdrant_client_instance
 
 # Helper to load permissions
 def load_permissions() -> dict:
@@ -66,22 +68,39 @@ def get_allowed_tags(authorization: Optional[str] = Header(None)) -> List[str]:
 # GET /v1/search
 @app.get("/v1/search")
 def search(
-    vector: str = Query(..., description="Comma-separated vector floats, e.g., '0.1,0.2,0.3,0.4'"),
+    q: Optional[str] = Query(None, description="Semantic text query, e.g., 'financial budget'"),
+    vector: Optional[str] = Query(None, description="Comma-separated vector floats, e.g., '0.1,0.2,0.3,0.4'"),
     collection: str = Query("enterprise_docs", description="Qdrant collection name"),
     limit: int = Query(5, ge=1, description="Max number of results"),
     allowed_tags: List[str] = Depends(get_allowed_tags),
     client: QdrantClient = Depends(get_qdrant_client)
 ):
-    try:
-        # Parse vector from query parameter
-        vector_floats = [float(x.strip()) for x in vector.split(",")]
-    except ValueError as e:
+    vector_floats = []
+    if vector:
+        try:
+            # Parse vector from query parameter
+            vector_floats = [float(x.strip()) for x in vector.split(",")]
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid vector format. Must be comma-separated floats, e.g., '0.1,0.2,0.3,0.4'."
+            )
+    elif q:
+        # Simple mock embedding conversion mapping search keywords to stored vectors
+        q_lower = q.lower()
+        if "finance" in q_lower or "budget" in q_lower:
+            # Target the sensitive financial vectors
+            vector_floats = [0.9, 0.1, 0.1, 0.1]
+        else:
+            # Target the public vectors
+            vector_floats = [0.1, 0.1, 0.9, 0.1]
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid vector format. Must be comma-separated floats, e.g., '0.1,0.2,0.3,0.4'."
+            detail="Either 'q' or 'vector' query parameter must be provided."
         )
         
-    logger.info(f"Executing GET semantic search in collection '{collection}' with dynamic filter injection: {allowed_tags}")
+    logger.info(f"Executing GET semantic search (q='{q}', vector={vector_floats}) in collection '{collection}' with dynamic filter injection: {allowed_tags}")
     
     # Invariant 01: Mandatory Interdiction
     qdrant_filter = Filter(
@@ -94,12 +113,13 @@ def search(
     )
     
     try:
-        results = client.search(
+        query_response = client.query_points(
             collection_name=collection,
-            query_vector=vector_floats,
+            query=vector_floats,
             query_filter=qdrant_filter,
             limit=limit
         )
+        results = query_response.points
         
         # Format output and enforce security invariants
         search_results = []
@@ -163,12 +183,13 @@ def search_post(
     )
     
     try:
-        results = client.search(
+        query_response = client.query_points(
             collection_name=request.collection,
-            query_vector=request.vector,
+            query=request.vector,
             query_filter=qdrant_filter,
             limit=request.limit
         )
+        results = query_response.points
         
         search_results = []
         for res in results:

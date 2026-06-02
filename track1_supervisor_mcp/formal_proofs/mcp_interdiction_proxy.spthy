@@ -1,0 +1,59 @@
+theory McpInterdictionProxy
+begin
+
+builtins: signing
+
+// Rule 1: Identity Provider generates a public/private keypair
+rule IdP_Generate_Keypair:
+  [ Fr(~sk) ]
+  -->
+  [ !Ltk('IdP', ~sk)
+  , !Pk('IdP', pk(~sk))
+  , Out(pk(~sk))
+  ]
+
+// Rule 2: Client initiates a tool-call request with a fresh payload
+rule Client_Request_Signature:
+  [ Fr(~payload) ]
+  -->
+  [ Out(~payload)
+  , Client_Waiting(~payload)
+  ]
+
+// Rule 3: Identity Provider signs the payload with its private key
+rule IdP_Sign:
+  [ !Ltk('IdP', sk), In(payload) ]
+  --[ IdP_Sign_Payload(payload) ]->
+  [ Out(sign(payload, sk)) ]
+
+// Rule 4: Client receives signature and sends (payload, signature) to the Proxy
+rule Client_Receive_Signature_And_Send:
+  [ Client_Waiting(payload), In(sig) ]
+  -->
+  [ Out(<payload, sig>) ]
+
+// Rule 5: Proxy Gateway validates the signature and authorizes execution
+rule Proxy_Validate_And_Execute:
+  let
+    ver = verify(sig, payload, pkIdP)
+  in
+  [ !Pk('IdP', pkIdP), In(<payload, sig>) ]
+  --[ Equal(ver, true), Tool_Execution_Authorized(payload) ]->
+  [ Authorized(payload) ]
+
+// Restriction to enforce that equality checks must hold
+restriction Equality:
+  "All x y #i. Equal(x, y) @ i ==> x = y"
+
+// Lemma 1: Sanity check proving that the protocol can reach an execution state
+lemma Executable:
+  exists-trace
+  "Ex payload #i. Tool_Execution_Authorized(payload) @ i"
+
+// Lemma 2: Security property proving that no payload can be executed unless signed by the IdP
+lemma Execution_Requires_Valid_Signature:
+  "All payload #i. Tool_Execution_Authorized(payload) @ i ==>
+   (Ex #j. IdP_Sign_Payload(payload) @ j)"
+
+
+end

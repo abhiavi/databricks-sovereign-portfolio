@@ -1,0 +1,134 @@
+theory McpInterdictionProxy
+
+begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, pair/2, pk/1, sign/2, snd/1, true/0, verify/3
+equations:
+    fst(<x.1, x.2>) = x.1,
+    snd(<x.1, x.2>) = x.2,
+    verify(sign(x.1, x.2), x.1, pk(x.2)) = true
+
+rule (modulo E) IdP_Generate_Keypair:
+   [ Fr( ~sk ) ]
+  -->
+   [ !Ltk( 'IdP', ~sk ), !Pk( 'IdP', pk(~sk) ), Out( pk(~sk) ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Client_Request_Signature:
+   [ Fr( ~payload ) ] --> [ Out( ~payload ), Client_Waiting( ~payload ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) IdP_Sign:
+   [ !Ltk( 'IdP', sk ), In( payload ) ]
+  --[ IdP_Sign_Payload( payload ) ]->
+   [ Out( sign(payload, sk) ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Client_Receive_Signature_And_Send:
+   [ Client_Waiting( payload ), In( sig ) ] --> [ Out( <payload, sig> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Proxy_Validate_And_Execute:
+   [ !Pk( 'IdP', pkIdP ), In( <payload, sig> ) ]
+  --[
+  Equal( verify(sig, payload, pkIdP), true ),
+  Tool_Execution_Authorized( payload )
+  ]->
+   [ Authorized( payload ) ]
+
+  /*
+  rule (modulo AC) Proxy_Validate_And_Execute:
+     [ !Pk( 'IdP', pkIdP ), In( <payload, sig> ) ]
+    --[ Equal( z, true ), Tool_Execution_Authorized( payload ) ]->
+     [ Authorized( payload ) ]
+    variants (modulo AC)
+    1. payload
+             = payload.7
+       pkIdP = pkIdP.8
+       sig   = sig.9
+       z     = verify(sig.9, payload.7, pkIdP.8)
+    
+    2. payload
+             = payload.8
+       pkIdP = pk(x.14)
+       sig   = sign(payload.8, x.14)
+       z     = true
+  */
+
+restriction Equality:
+  "∀ x y #i. (Equal( x, y ) @ #i) ⇒ (x = y)"
+  // safety formula
+
+  /*
+  expanded formula:
+  "∀ x y #i. (Equal( x, y ) @ #i) ⇒ (x = y)"
+  */
+
+lemma Executable:
+  exists-trace "∃ payload #i. Tool_Execution_Authorized( payload ) @ #i"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ payload #i. (Tool_Execution_Authorized( payload ) @ #i)"
+*/
+simplify
+solve( !Pk( 'IdP', pk(x) ) ▶₀ #i )
+  case IdP_Generate_Keypair
+  solve( !KU( sign(payload, ~sk) ) @ #vk.2 )
+    case IdP_Sign
+    SOLVED // trace found
+  qed
+qed
+
+lemma Execution_Requires_Valid_Signature:
+  all-traces
+  "∀ payload #i.
+    (Tool_Execution_Authorized( payload ) @ #i) ⇒
+    (∃ #j. IdP_Sign_Payload( payload ) @ #j)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ payload #i.
+  (Tool_Execution_Authorized( payload ) @ #i)
+ ∧
+  ∀ #j. (IdP_Sign_Payload( payload ) @ #j) ⇒ ⊥"
+*/
+simplify
+solve( !Pk( 'IdP', pk(x) ) ▶₀ #i )
+  case IdP_Generate_Keypair
+  solve( !KU( sign(payload, ~sk) ) @ #vk.2 )
+    case IdP_Sign
+    by contradiction /* from formulas */
+  next
+    case c_sign
+    by solve( !KU( ~sk ) @ #vk.3 )
+  qed
+qed
+
+/* All wellformedness checks were successful. */
+
+/*
+Generated from:
+Tamarin version 1.12.0
+Maude version 3.5.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2026-06-01 14:38:33.333145424 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: mcp_interdiction_proxy.spthy
+
+  processing time: 0.22s
+  
+  Executable (exists-trace): verified (4 steps)
+  Execution_Requires_Valid_Signature (all-traces): verified (5 steps)
+
+==============================================================================
